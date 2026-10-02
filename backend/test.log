@@ -1,0 +1,5 @@
+2026-10-02 10:30:01 INFO Starting application
+2026-10-02 10:30:03 INFO Connecting to database
+2026-10-02 10:30:05 ERROR Connection refused while connecting to localhost:5000
+2026-10-02 10:30:05 ERROR Database connection failed
+2026-10-02 10:30:06 INFO Retrying connection
