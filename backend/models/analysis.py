@@ -1,9 +1,14 @@
 from typing import List, Literal
+
 from pydantic import BaseModel, Field
 
 
 class AnalysisRequest(BaseModel):
-    error_text: str = Field(..., min_length=1, max_length=50000)
+    error_text: str = Field(
+        ...,
+        min_length=1,
+        max_length=50000
+    )
 
 
 class LogSummary(BaseModel):
@@ -17,7 +22,10 @@ class LogSummary(BaseModel):
 class AnalysisResponse(BaseModel):
     id: int | None = None
 
-    error_type: str = Field(min_length=1, max_length=200)
+    error_type: str = Field(
+        min_length=1,
+        max_length=200
+    )
 
     category: Literal[
         "Database",
@@ -59,6 +67,10 @@ class AnalysisResponse(BaseModel):
     recommended_actions: List[str]
 
     evidence: List[str]
+
+    hypotheses: List[str] = []
+
+    detected_signals: List[str] = []
 
     log_summary: LogSummary
 

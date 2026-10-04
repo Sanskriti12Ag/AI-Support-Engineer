@@ -1,5 +1,7 @@
 import json
 
+from config import settings
+
 from fastapi import (
     APIRouter,
     UploadFile,
@@ -28,7 +30,7 @@ router = APIRouter(
 )
 
 
-MAX_LOG_SIZE = 2 * 1024 * 1024
+MAX_LOG_SIZE = settings.MAX_LOG_SIZE
 
 
 def save_analysis(
