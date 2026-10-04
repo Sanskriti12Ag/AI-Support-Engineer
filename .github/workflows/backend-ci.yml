@@ -30,3 +30,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: pytest
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ai-support-engineer-backend:ci \
+            ./backend
