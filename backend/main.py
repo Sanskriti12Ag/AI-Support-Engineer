@@ -6,6 +6,7 @@ from routes.analysis import router as analysis_router
 from routes.history import router as history_router
 from routes.chat import router as chat_router
 
+from services.database import init_db
 
 app = FastAPI(
     title="AI Support Engineer",
@@ -13,6 +14,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+init_db()
 
 # -----------------------------
 # CORS

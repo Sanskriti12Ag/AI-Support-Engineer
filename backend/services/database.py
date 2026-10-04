@@ -1,8 +1,13 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
-DATABASE_URL = "sqlite:///./support_engineer.db"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///./support_engineer.db"
+)
 
 engine = create_engine(
     DATABASE_URL,
@@ -25,3 +30,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
