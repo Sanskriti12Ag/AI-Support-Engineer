@@ -1,26 +1,18 @@
-from fastapi.testclient import TestClient
-
-from main import app
-
-
-client = TestClient(app)
-
-
-def test_health():
+def test_health(client):
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
 
 
-def test_readiness():
+def test_readiness(client):
     response = client.get("/ready")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
 
 
-def test_empty_analysis():
+def test_empty_analysis(client):
     response = client.post(
         "/api/analysis/",
         json={
@@ -31,16 +23,16 @@ def test_empty_analysis():
     assert response.status_code == 422
 
 
-def test_analysis_missing_field():
+def test_analysis_missing_field(client):
     response = client.post(
         "/api/analysis/",
-        json={},
+        json={}
     )
 
     assert response.status_code == 422
 
 
-def test_analysis_too_large():
+def test_analysis_too_large(client):
     response = client.post(
         "/api/analysis/",
         json={
@@ -51,7 +43,7 @@ def test_analysis_too_large():
     assert response.status_code == 422
 
 
-def test_invalid_log_extension():
+def test_invalid_log_extension(client):
     response = client.post(
         "/api/analysis/upload",
         files={
@@ -66,7 +58,7 @@ def test_invalid_log_extension():
     assert response.status_code == 400
 
 
-def test_missing_analysis():
+def test_missing_analysis(client):
     response = client.get(
         "/api/history/999999"
     )
@@ -74,7 +66,7 @@ def test_missing_analysis():
     assert response.status_code == 404
 
 
-def test_invalid_chat_analysis_id():
+def test_invalid_chat_analysis_id(client):
     response = client.post(
         "/api/chat/",
         json={
@@ -86,7 +78,7 @@ def test_invalid_chat_analysis_id():
     assert response.status_code == 404
 
 
-def test_process_time_header():
+def test_process_time_header(client):
     response = client.get("/health")
 
     assert "X-Process-Time" in response.headers
