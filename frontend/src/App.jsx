@@ -1,49 +1,18 @@
-import { useEffect, useState } from "react";
-import {
-  Activity,
-  AlertCircle,
-  Bot,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
-  FileText,
-  History,
-  Loader2,
-  MessageCircle,
-  RefreshCw,
-  Send,
-  ShieldAlert,
-  Sparkles,
-  Upload,
-  XCircle,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
-const API_URL = "http://127.0.0.1:8000";
-
-const sampleError = `2026-10-02 18:42:10 ERROR API request failed
-2026-10-02 18:42:10 ERROR Connection refused while connecting to localhost:5000
-2026-10-02 18:42:11 WARNING Retrying connection
-2026-10-02 18:42:13 ERROR Maximum retry attempts exceeded
-HTTP 500`;
+const API_URL = "http://localhost:8000";
 
 function App() {
   const [errorText, setErrorText] = useState("");
   const [analysis, setAnalysis] = useState(null);
-  const [analysisId, setAnalysisId] = useState(null);
-
   const [history, setHistory] = useState([]);
-  const [selectedHistory, setSelectedHistory] = useState(null);
-
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-
-  const [error, setError] = useState("");
-
-  const [question, setQuestion] = useState("");
+  const [message, setMessage] = useState("");
+  const [chatQuestion, setChatQuestion] = useState("");
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-
-  const [fileName, setFileName] = useState("");
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     loadHistory();
@@ -56,13 +25,13 @@ function App() {
       const response = await fetch(`${API_URL}/api/history/`);
 
       if (!response.ok) {
-        throw new Error("Could not load history");
+        throw new Error("Unable to load analysis history.");
       }
 
       const data = await response.json();
-      setHistory(data);
-    } catch (err) {
-      console.error(err);
+      setHistory(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setMessage(error.message);
     } finally {
       setHistoryLoading(false);
     }
@@ -70,15 +39,15 @@ function App() {
 
   async function analyzeError() {
     if (!errorText.trim()) {
-      setError("Please paste an error or log before analyzing.");
+      setMessage("Please enter an error or log before analyzing.");
       return;
     }
 
     try {
       setLoading(true);
-      setError("");
+      setMessage("");
       setAnalysis(null);
-      setSelectedHistory(null);
+      setChatAnswer("");
 
       const response = await fetch(`${API_URL}/api/analysis/`, {
         method: "POST",
@@ -93,25 +62,17 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Analysis failed");
+        throw new Error(
+          data.detail?.[0]?.msg ||
+            data.detail ||
+            "Analysis failed."
+        );
       }
 
       setAnalysis(data);
-
       await loadHistory();
-
-      // Get latest history entry.
-      const historyResponse = await fetch(`${API_URL}/api/history/`);
-
-      if (historyResponse.ok) {
-        const historyData = await historyResponse.json();
-
-        if (historyData.length > 0) {
-          setAnalysisId(historyData[0].id);
-        }
-      }
-    } catch (err) {
-      setError(err.message || "Something went wrong.");
+    } catch (error) {
+      setMessage(error.message);
     } finally {
       setLoading(false);
     }
@@ -120,82 +81,73 @@ function App() {
   async function uploadLog(event) {
     const file = event.target.files?.[0];
 
-    if (!file) return;
-
-    setFileName(file.name);
-    setError("");
-
-    if (!file.name.toLowerCase().endsWith(".log")) {
-      setError("Only .log files are supported.");
+    if (!file) {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
+    if (!file.name.toLowerCase().endsWith(".log")) {
+      setMessage("Only .log files are supported.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setMessage("Log file is too large. Maximum size is 2 MB.");
+      event.target.value = "";
+      return;
+    }
 
     try {
       setLoading(true);
+      setMessage("");
       setAnalysis(null);
-      setSelectedHistory(null);
+      setChatAnswer("");
 
-      const response = await fetch(`${API_URL}/api/analysis/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(
+        `${API_URL}/api/analysis/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "File analysis failed");
+        throw new Error(data.detail || "Log upload failed.");
       }
 
       setAnalysis(data);
+
+      const text = await file.text();
+      setErrorText(text);
 
       await loadHistory();
-
-      const historyResponse = await fetch(`${API_URL}/api/history/`);
-
-      if (historyResponse.ok) {
-        const historyData = await historyResponse.json();
-
-        if (historyData.length > 0) {
-          setAnalysisId(historyData[0].id);
-        }
-      }
-    } catch (err) {
-      setError(err.message || "Could not analyze the file.");
+    } catch (error) {
+      setMessage(error.message);
     } finally {
       setLoading(false);
+      event.target.value = "";
     }
   }
 
-  async function openHistory(id) {
-    try {
-      setError("");
-      setSelectedHistory(id);
+  async function askFollowUp(event) {
+    event.preventDefault();
 
-      const response = await fetch(`${API_URL}/api/history/${id}`);
-
-      if (!response.ok) {
-        throw new Error("Could not load analysis.");
-      }
-
-      const data = await response.json();
-
-      setAnalysis(data);
-      setAnalysisId(id);
-      setChatAnswer("");
-    } catch (err) {
-      setError(err.message);
+    if (!analysis) {
+      return;
     }
-  }
 
-  async function askAI() {
-    if (!question.trim() || !analysisId) return;
+    if (!chatQuestion.trim()) {
+      return;
+    }
 
     try {
       setChatLoading(true);
-      setError("");
+      setChatAnswer("");
 
       const response = await fetch(`${API_URL}/api/chat/`, {
         method: "POST",
@@ -203,514 +155,494 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          analysis_id: analysisId,
-          question,
+          analysis_id: analysis.id || history[0]?.id,
+          question: chatQuestion,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "AI response failed");
+        throw new Error(
+          data.detail || "Unable to get an AI response."
+        );
       }
 
       setChatAnswer(data.answer);
-      setQuestion("");
-    } catch (err) {
-      setError(err.message || "Could not contact AI.");
+      setChatQuestion("");
+    } catch (error) {
+      setMessage(error.message);
     } finally {
       setChatLoading(false);
     }
   }
 
-  function useSample() {
-    setErrorText(sampleError);
-    setError("");
-  }
+  function selectHistory(item) {
+    setAnalysis({
+      error_type: item.error_type,
+      category: item.category,
+      severity: item.severity,
+      confidence: Number(item.confidence),
+      root_cause: item.root_cause,
+      explanation:
+        "This analysis was loaded from saved history.",
+      suggested_fix: "Review the original analysis for the complete recommendation.",
+      recommended_actions: [],
+      evidence: [],
+      log_summary: {
+        total_lines: 0,
+        errors: [],
+        warnings: [],
+        timestamps: [],
+        status_codes: [],
+      },
+      id: item.id,
+    });
 
-  function clearAll() {
-    setErrorText("");
-    setAnalysis(null);
-    setAnalysisId(null);
-    setSelectedHistory(null);
     setChatAnswer("");
-    setQuestion("");
-    setFileName("");
-    setError("");
+    setMessage("");
   }
 
-  const severityClass = {
-    Low: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-    Medium: "border-yellow-500/30 bg-yellow-500/10 text-yellow-400",
-    High: "border-orange-500/30 bg-orange-500/10 text-orange-400",
-    Critical: "border-red-500/30 bg-red-500/10 text-red-400",
-  };
+  function clearAnalysis() {
+    setAnalysis(null);
+    setChatAnswer("");
+    setChatQuestion("");
+    setMessage("");
+  }
+
+  const severityClass =
+    analysis?.severity?.toLowerCase() || "medium";
 
   return (
-    <div className="min-h-screen">
-      {/* HEADER */}
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#080b12]/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-              <Bot size={23} />
-            </div>
-
-            <div>
-              <h1 className="text-lg font-bold text-white">
-                AI Support Engineer
-              </h1>
-
-              <p className="text-xs text-gray-500">
-                Developer troubleshooting intelligence
-              </p>
-            </div>
-          </div>
-
-          <div className="hidden items-center gap-3 sm:flex">
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400">
-              <span className="h-2 w-2 rounded-full bg-emerald-400" />
-              API Online
-            </div>
-
-            <div className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-gray-400">
-              v1.0
-            </div>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">AI</div>
+          <div>
+            <div className="brand-title">Support Engineer</div>
+            <div className="brand-subtitle">Developer Assistant</div>
           </div>
         </div>
-      </header>
 
-      {/* MAIN */}
-      <main className="mx-auto max-w-[1500px] px-6 py-8">
-        {/* HERO */}
-        <section className="mb-8">
-          <div className="mb-3 flex items-center gap-2 text-sm text-blue-400">
-            <Sparkles size={16} />
-            AI-powered incident analysis
+        <nav className="sidebar-nav">
+          <button
+            className="nav-item active"
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
+            <span>⌂</span>
+            Dashboard
+          </button>
+
+          <button
+            className="nav-item"
+            type="button"
+            onClick={() =>
+              document
+                .getElementById("history")
+                ?.scrollIntoView({ behavior: "smooth" })
+            }
+          >
+            <span>◷</span>
+            History
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="system-status">
+            <span className="status-dot" />
+            <div>
+              <strong>System Online</strong>
+              <small>AI service connected</small>
+            </div>
           </div>
 
-          <h2 className="max-w-3xl text-3xl font-bold tracking-tight text-white md:text-5xl">
-            Turn confusing errors into{" "}
-            <span className="text-blue-400">actionable fixes.</span>
-          </h2>
+          <div className="tech-stack">
+            <span>FastAPI</span>
+            <span>React</span>
+            <span>Ollama</span>
+          </div>
+        </div>
+      </aside>
 
-          <p className="mt-4 max-w-2xl text-gray-400">
-            Paste an error or upload a log file. The AI analyzes the evidence,
-            identifies the likely root cause, and gives you practical next
-            steps.
-          </p>
-        </section>
+      <main className="main-content">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">AI-POWERED TROUBLESHOOTING</p>
+            <h1>Developer Support Center</h1>
+            <p className="page-description">
+              Analyze errors, understand root causes, and get actionable fixes.
+            </p>
+          </div>
 
-        {/* ERROR */}
-        {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
-            <XCircle size={18} className="mt-0.5 shrink-0" />
-            <span>{error}</span>
+          <div className="topbar-status">
+            <span className="status-dot" />
+            API Online
+          </div>
+        </header>
+
+        {message && (
+          <div className="alert" role="alert">
+            <span>!</span>
+            {message}
+            <button
+              type="button"
+              onClick={() => setMessage("")}
+              aria-label="Close message"
+            >
+              ×
+            </button>
           </div>
         )}
 
-        {/* INPUT + HISTORY */}
-        <div className="grid gap-6 lg:grid-cols-[1fr_330px]">
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-2xl">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <section className="workspace">
+          <div className="input-card">
+            <div className="section-heading">
               <div>
-                <h3 className="font-semibold text-white">
-                  Analyze an incident
-                </h3>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  Paste an exception, stack trace, or application log.
-                </p>
+                <span className="section-number">01</span>
+                <div>
+                  <h2>Submit an Error</h2>
+                  <p>Paste an error, stack trace, or application log.</p>
+                </div>
               </div>
-
-              <button
-                onClick={useSample}
-                className="rounded-lg border border-white/10 px-3 py-2 text-xs text-gray-400 transition hover:bg-white/5 hover:text-white"
-              >
-                Use sample
-              </button>
             </div>
 
             <textarea
+              className="error-input"
               value={errorText}
-              onChange={(e) => setErrorText(e.target.value)}
-              placeholder={`Paste something like:
+              onChange={(event) => setErrorText(event.target.value)}
+              placeholder={`Example:
 
 Connection refused while connecting to localhost:5000
-HTTP 500 Internal Server Error
-Database connection timeout...`}
-              className="min-h-[260px] w-full resize-y rounded-xl border border-white/10 bg-black/20 p-4 font-mono text-sm leading-6 text-gray-200 outline-none transition placeholder:text-gray-600 focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/10"
+
+or paste a complete application log / stack trace here...`}
+              maxLength={50000}
             />
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-300 transition hover:bg-white/5 hover:text-white">
-                  <Upload size={16} />
-                  Upload .log
+            <div className="input-footer">
+              <span>
+                {errorText.length.toLocaleString()} / 50,000 characters
+              </span>
 
-                  <input
-                    type="file"
-                    accept=".log"
-                    className="hidden"
-                    onChange={uploadLog}
-                  />
-                </label>
+              <div className="input-actions">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".log"
+                  onChange={uploadLog}
+                  hidden
+                />
 
-                {fileName && (
-                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <FileText size={14} />
-                    {fileName}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex gap-2">
                 <button
-                  onClick={clearAll}
-                  className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-400 transition hover:bg-white/5 hover:text-white"
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading}
                 >
-                  Clear
+                  ↑ Upload .log
                 </button>
 
                 <button
+                  className="primary-button"
+                  type="button"
                   onClick={analyzeError}
-                  disabled={loading}
-                  className="flex items-center gap-2 rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={loading || !errorText.trim()}
                 >
                   {loading ? (
                     <>
-                      <Loader2 size={17} className="animate-spin" />
+                      <span className="spinner" />
                       Analyzing...
                     </>
                   ) : (
                     <>
-                      <Sparkles size={17} />
-                      Analyze
+                      Analyze Error
+                      <span>→</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
-          </section>
+          </div>
 
-          {/* HISTORY */}
-          <aside className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="mb-5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <History size={18} className="text-gray-400" />
-                <h3 className="font-semibold text-white">History</h3>
+          {analysis && (
+            <section className="results-section">
+              <div className="results-header">
+                <div>
+                  <span className="section-number">02</span>
+                  <div>
+                    <h2>AI Analysis</h2>
+                    <p>Technical diagnosis generated from your input.</p>
+                  </div>
+                </div>
+
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={clearAnalysis}
+                >
+                  New Analysis
+                </button>
+              </div>
+
+              <div className="metrics-grid">
+                <div className={`metric-card ${severityClass}`}>
+                  <span className="metric-label">SEVERITY</span>
+                  <strong>{analysis.severity}</strong>
+                </div>
+
+                <div className="metric-card">
+                  <span className="metric-label">CATEGORY</span>
+                  <strong>{analysis.category}</strong>
+                </div>
+
+                <div className="metric-card">
+                  <span className="metric-label">ERROR TYPE</span>
+                  <strong>{analysis.error_type}</strong>
+                </div>
+
+                <div className="metric-card">
+                  <span className="metric-label">CONFIDENCE</span>
+                  <strong>
+                    {Math.round((analysis.confidence || 0) * 100)}%
+                  </strong>
+                </div>
+              </div>
+
+              <div className="analysis-grid">
+                <div className="analysis-main">
+                  <AnalysisBlock
+                    title="Root Cause"
+                    icon="◎"
+                    content={analysis.root_cause}
+                  />
+
+                  <AnalysisBlock
+                    title="Explanation"
+                    icon="◇"
+                    content={analysis.explanation}
+                  />
+
+                  <AnalysisBlock
+                    title="Suggested Fix"
+                    icon="✓"
+                    content={analysis.suggested_fix}
+                    highlighted
+                  />
+
+                  {analysis.recommended_actions?.length > 0 && (
+                    <div className="analysis-block">
+                      <div className="block-title">
+                        <span>☑</span>
+                        <h3>Recommended Actions</h3>
+                      </div>
+
+                      <div className="action-list">
+                        {analysis.recommended_actions.map(
+                          (action, index) => (
+                            <div className="action-item" key={index}>
+                              <span>{index + 1}</span>
+                              <p>{action}</p>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {analysis.evidence?.length > 0 && (
+                    <div className="analysis-block">
+                      <div className="block-title">
+                        <span>⌁</span>
+                        <h3>Evidence</h3>
+                      </div>
+
+                      <div className="evidence-list">
+                        {analysis.evidence.map((item, index) => (
+                          <div key={index} className="evidence-item">
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <aside className="analysis-side">
+                  <div className="summary-card">
+                    <div className="block-title">
+                      <span>▤</span>
+                      <h3>Log Summary</h3>
+                    </div>
+
+                    <SummaryRow
+                      label="Total Lines"
+                      value={analysis.log_summary?.total_lines ?? 0}
+                    />
+
+                    <SummaryRow
+                      label="Errors"
+                      value={analysis.log_summary?.errors?.length ?? 0}
+                    />
+
+                    <SummaryRow
+                      label="Warnings"
+                      value={analysis.log_summary?.warnings?.length ?? 0}
+                    />
+
+                    <SummaryRow
+                      label="Timestamps"
+                      value={
+                        analysis.log_summary?.timestamps?.length ?? 0
+                      }
+                    />
+
+                    <SummaryRow
+                      label="Status Codes"
+                      value={
+                        analysis.log_summary?.status_codes?.length ?? 0
+                      }
+                    />
+                  </div>
+
+                  <div className="chat-card">
+                    <div className="chat-heading">
+                      <div className="ai-avatar">AI</div>
+                      <div>
+                        <h3>Ask the AI</h3>
+                        <p>Follow up on this diagnosis</p>
+                      </div>
+                    </div>
+
+                    {chatAnswer && (
+                      <div className="chat-answer">
+                        {chatAnswer}
+                      </div>
+                    )}
+
+                    <form onSubmit={askFollowUp}>
+                      <div className="chat-input-wrapper">
+                        <input
+                          type="text"
+                          value={chatQuestion}
+                          onChange={(event) =>
+                            setChatQuestion(event.target.value)
+                          }
+                          placeholder="Why is this happening?"
+                          maxLength={5000}
+                        />
+
+                        <button
+                          type="submit"
+                          disabled={
+                            chatLoading || !chatQuestion.trim()
+                          }
+                          aria-label="Ask AI"
+                        >
+                          {chatLoading ? "..." : "→"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </aside>
+              </div>
+            </section>
+          )}
+
+          <section className="history-section" id="history">
+            <div className="section-heading">
+              <div>
+                <span className="section-number">03</span>
+                <div>
+                  <h2>Analysis History</h2>
+                  <p>Your previous troubleshooting sessions.</p>
+                </div>
               </div>
 
               <button
+                className="text-button"
+                type="button"
                 onClick={loadHistory}
-                className="rounded-lg p-2 text-gray-500 hover:bg-white/5 hover:text-white"
+                disabled={historyLoading}
               >
-                <RefreshCw
-                  size={15}
-                  className={historyLoading ? "animate-spin" : ""}
-                />
+                {historyLoading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
 
             {history.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
-                <Clock3
-                  size={22}
-                  className="mx-auto mb-2 text-gray-600"
-                />
-                <p className="text-sm text-gray-500">
-                  No analyses yet.
+              <div className="empty-history">
+                <div className="empty-icon">◷</div>
+                <h3>No analyses yet</h3>
+                <p>
+                  Submit your first error above and your analysis will
+                  appear here.
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="history-list">
                 {history.map((item) => (
                   <button
+                    className="history-item"
+                    type="button"
                     key={item.id}
-                    onClick={() => openHistory(item.id)}
-                    className={`w-full rounded-xl border p-3 text-left transition ${
-                      selectedHistory === item.id
-                        ? "border-blue-500/30 bg-blue-500/10"
-                        : "border-white/5 bg-black/10 hover:border-white/10 hover:bg-white/[0.04]"
-                    }`}
+                    onClick={() => selectHistory(item)}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-gray-200">
-                          {item.error_type}
-                        </p>
-
-                        <p className="mt-1 text-xs text-gray-500">
-                          {item.category}
-                        </p>
-                      </div>
-
-                      <ChevronRight
-                        size={15}
-                        className="mt-1 shrink-0 text-gray-600"
-                      />
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between">
+                    <div className="history-severity">
                       <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] ${
-                          severityClass[item.severity] ||
-                          severityClass.Medium
-                        }`}
-                      >
-                        {item.severity}
-                      </span>
-
-                      <span className="text-[10px] text-gray-600">
-                        #{item.id}
-                      </span>
+                        className={`severity-dot ${item.severity?.toLowerCase()}`}
+                      />
+                      {item.severity}
                     </div>
+
+                    <div className="history-info">
+                      <strong>{item.error_type}</strong>
+                      <span>{item.category}</span>
+                    </div>
+
+                    <div className="history-cause">
+                      {item.root_cause}
+                    </div>
+
+                    <div className="history-date">
+                      {item.created_at
+                        ? new Date(item.created_at).toLocaleString()
+                        : "Unknown"}
+                    </div>
+
+                    <span className="history-arrow">→</span>
                   </button>
                 ))}
               </div>
             )}
-          </aside>
-        </div>
-
-        {/* RESULTS */}
-        {analysis && (
-          <section className="mt-8 space-y-5">
-            <div className="flex items-center gap-2">
-              <Activity size={20} className="text-blue-400" />
-              <h2 className="text-xl font-bold text-white">
-                Analysis Result
-              </h2>
-            </div>
-
-            {/* TOP STATS */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard
-                label="Error Type"
-                value={analysis.error_type}
-                icon={<AlertCircle size={18} />}
-              />
-
-              <StatCard
-                label="Category"
-                value={analysis.category}
-                icon={<ShieldAlert size={18} />}
-              />
-
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-                <p className="mb-3 text-xs uppercase tracking-wider text-gray-500">
-                  Severity
-                </p>
-
-                <span
-                  className={`inline-flex rounded-full border px-3 py-1 text-sm font-medium ${
-                    severityClass[analysis.severity] ||
-                    severityClass.Medium
-                  }`}
-                >
-                  {analysis.severity}
-                </span>
-              </div>
-
-              <StatCard
-                label="Confidence"
-                value={`${Math.round(analysis.confidence * 100)}%`}
-                icon={<CheckCircle2 size={18} />}
-              />
-            </div>
-
-            {/* ROOT CAUSE */}
-            <div className="grid gap-5 lg:grid-cols-2">
-              <ResultCard title="Likely Root Cause">
-                <p className="leading-7 text-gray-300">
-                  {analysis.root_cause}
-                </p>
-              </ResultCard>
-
-              <ResultCard title="Explanation">
-                <p className="leading-7 text-gray-300">
-                  {analysis.explanation}
-                </p>
-              </ResultCard>
-            </div>
-
-            {/* FIX */}
-            <ResultCard title="Suggested Fix">
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-                <p className="whitespace-pre-wrap leading-7 text-gray-300">
-                  {analysis.suggested_fix}
-                </p>
-              </div>
-            </ResultCard>
-
-            {/* EVIDENCE + ACTIONS */}
-            <div className="grid gap-5 lg:grid-cols-2">
-              <ResultCard title="Evidence">
-                {analysis.evidence?.length ? (
-                  <ul className="space-y-3">
-                    {analysis.evidence.map((item, index) => (
-                      <li
-                        key={index}
-                        className="flex gap-3 rounded-xl border border-white/5 bg-black/10 p-3 text-sm text-gray-300"
-                      >
-                        <span className="mt-0.5 text-blue-400">•</span>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-gray-500">No evidence returned.</p>
-                )}
-              </ResultCard>
-
-              <ResultCard title="Recommended Actions">
-                {analysis.recommended_actions?.length ? (
-                  <ol className="space-y-3">
-                    {analysis.recommended_actions.map((item, index) => (
-                      <li
-                        key={index}
-                        className="flex gap-3 text-sm text-gray-300"
-                      >
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-xs font-semibold text-blue-400">
-                          {index + 1}
-                        </span>
-
-                        <span className="pt-1">{item}</span>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="text-gray-500">No actions returned.</p>
-                )}
-              </ResultCard>
-            </div>
-
-            {/* LOG SUMMARY */}
-            {analysis.log_summary && (
-              <ResultCard title="Log Summary">
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <SummaryItem
-                    label="Total Lines"
-                    value={analysis.log_summary.total_lines}
-                  />
-
-                  <SummaryItem
-                    label="Errors"
-                    value={analysis.log_summary.errors?.length || 0}
-                  />
-
-                  <SummaryItem
-                    label="Warnings"
-                    value={analysis.log_summary.warnings?.length || 0}
-                  />
-
-                  <SummaryItem
-                    label="Status Codes"
-                    value={analysis.log_summary.status_codes?.join(", ") || "—"}
-                  />
-                </div>
-              </ResultCard>
-            )}
-
-            {/* AI CHAT */}
-            {analysisId && (
-              <section className="rounded-2xl border border-purple-500/20 bg-purple-500/[0.04] p-5">
-                <div className="mb-5 flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/10 text-purple-400">
-                    <MessageCircle size={19} />
-                  </div>
-
-                  <div>
-                    <h3 className="font-semibold text-white">
-                      Ask the AI
-                    </h3>
-
-                    <p className="text-xs text-gray-500">
-                      Ask follow-up questions about this incident.
-                    </p>
-                  </div>
-                </div>
-
-                {chatAnswer && (
-                  <div className="mb-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-medium text-purple-400">
-                      <Bot size={14} />
-                      AI Support Engineer
-                    </div>
-
-                    <p className="whitespace-pre-wrap leading-7 text-gray-300">
-                      {chatAnswer}
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex gap-2">
-                  <input
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        askAI();
-                      }
-                    }}
-                    placeholder="e.g. What should I check first?"
-                    className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-purple-500/40"
-                  />
-
-                  <button
-                    onClick={askAI}
-                    disabled={chatLoading || !question.trim()}
-                    className="flex items-center gap-2 rounded-xl bg-purple-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-purple-400 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {chatLoading ? (
-                      <Loader2 size={17} className="animate-spin" />
-                    ) : (
-                      <Send size={17} />
-                    )}
-
-                    <span className="hidden sm:inline">Ask</span>
-                  </button>
-                </div>
-              </section>
-            )}
           </section>
-        )}
+        </section>
+
+        <footer className="footer">
+          <span>AI Support Engineer</span>
+          <span>FastAPI · React · SQLite · Ollama · Docker</span>
+        </footer>
       </main>
     </div>
   );
 }
 
-function StatCard({ label, value, icon }) {
+function AnalysisBlock({ title, icon, content, highlighted = false }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs uppercase tracking-wider text-gray-500">
-          {label}
-        </p>
-
-        <span className="text-gray-500">{icon}</span>
+    <div className={`analysis-block ${highlighted ? "highlighted" : ""}`}>
+      <div className="block-title">
+        <span>{icon}</span>
+        <h3>{title}</h3>
       </div>
 
-      <p className="truncate text-lg font-semibold text-white">
-        {value}
-      </p>
+      <p>{content || "No information available."}</p>
     </div>
   );
 }
 
-function ResultCard({ title, children }) {
+function SummaryRow({ label, value }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <h3 className="mb-4 text-sm font-semibold text-white">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function SummaryItem({ label, value }) {
-  return (
-    <div className="rounded-xl border border-white/5 bg-black/10 p-4">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+    <div className="summary-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }

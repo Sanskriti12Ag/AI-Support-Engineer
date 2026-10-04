@@ -8,6 +8,7 @@ from fastapi import (
     Depends
 )
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from models.analysis import (
@@ -47,27 +48,44 @@ def save_analysis(
     original_input: str,
     db: Session
 ):
-    analysis = Analysis(
-        error_type=result["error_type"],
-        category=result["category"],
-        severity=result["severity"],
-        confidence=str(result["confidence"]),
-        root_cause=result["root_cause"],
-        explanation=result["explanation"],
-        suggested_fix=result["suggested_fix"],
-        recommended_actions=json.dumps(
-            result["recommended_actions"]
-        ),
-        evidence=json.dumps(
-            result["evidence"]
-        ),
-        original_input=original_input
-    )
+    try:
+        analysis = Analysis(
+            error_type=result["error_type"],
+            category=result["category"],
+            severity=result["severity"],
+            confidence=str(result["confidence"]),
+            root_cause=result["root_cause"],
+            explanation=result["explanation"],
+            suggested_fix=result["suggested_fix"],
+            recommended_actions=json.dumps(
+                result["recommended_actions"]
+            ),
+            evidence=json.dumps(
+                result["evidence"]
+            ),
+            original_input=original_input
+        )
 
-    db.add(analysis)
-    db.commit()
+        db.add(analysis)
 
-    return analysis
+        db.commit()
+
+        db.refresh(analysis)
+
+        return analysis
+
+    except (
+        SQLAlchemyError,
+        KeyError,
+        TypeError,
+        ValueError
+    ):
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save analysis."
+        )
 
 
 # -----------------------------
@@ -108,31 +126,46 @@ async def analyze_log_file(
     db: Session = Depends(get_db)
 ):
 
-    # Check whether a file was provided
+    # -----------------------------
+    # Validate filename
+    # -----------------------------
+
     if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail="No file provided"
+            detail="No file provided."
         )
 
-    # Only allow .log files
+    # -----------------------------
+    # Validate file extension
+    # -----------------------------
+
     if not file.filename.lower().endswith(".log"):
         raise HTTPException(
             status_code=400,
-            detail="Only .log files are supported"
+            detail="Only .log files are supported."
         )
 
+    # -----------------------------
     # Read uploaded file
+    # -----------------------------
+
     content = await file.read()
 
-    # Protect the API from very large log files
+    # -----------------------------
+    # Validate file size
+    # -----------------------------
+
     if len(content) > MAX_LOG_SIZE:
         raise HTTPException(
             status_code=413,
             detail="Log file is too large. Maximum size is 2 MB."
         )
 
-    # Decode file as UTF-8
+    # -----------------------------
+    # Decode UTF-8
+    # -----------------------------
+
     try:
         log_text = content.decode("utf-8")
 
@@ -142,19 +175,28 @@ async def analyze_log_file(
             detail="Log file must use UTF-8 encoding."
         )
 
-    # Reject empty log files
+    # -----------------------------
+    # Reject empty files
+    # -----------------------------
+
     if not log_text.strip():
         raise HTTPException(
             status_code=400,
             detail="The log file is empty."
         )
 
-    # Analyze the log
+    # -----------------------------
+    # Analyze log
+    # -----------------------------
+
     result = analyze_error(
         log_text
     )
 
-    # Save analysis to database
+    # -----------------------------
+    # Save analysis
+    # -----------------------------
+
     save_analysis(
         result,
         log_text,
