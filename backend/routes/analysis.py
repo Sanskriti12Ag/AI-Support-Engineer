@@ -1,4 +1,7 @@
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from config import settings
 
@@ -33,11 +36,7 @@ router = APIRouter(
 MAX_LOG_SIZE = settings.MAX_LOG_SIZE
 
 
-def save_analysis(
-    result: dict,
-    original_input: str,
-    db: Session
-):
+def save_analysis(result: dict, original_input: str, db: Session):
     try:
         analysis = Analysis(
             error_type=result["error_type"],
@@ -47,12 +46,8 @@ def save_analysis(
             root_cause=result["root_cause"],
             explanation=result["explanation"],
             suggested_fix=result["suggested_fix"],
-            recommended_actions=json.dumps(
-                result["recommended_actions"]
-            ),
-            evidence=json.dumps(
-                result["evidence"]
-            ),
+            recommended_actions=json.dumps(result["recommended_actions"]),
+            evidence=json.dumps(result["evidence"]),
             original_input=original_input
         )
 
@@ -62,14 +57,9 @@ def save_analysis(
 
         return analysis
 
-    except (
-        SQLAlchemyError,
-        KeyError,
-        TypeError,
-        ValueError
-    ):
+    except Exception:
         db.rollback()
-
+        logger.exception("FAILED TO SAVE ANALYSIS")
         raise HTTPException(
             status_code=500,
             detail="Failed to save analysis."

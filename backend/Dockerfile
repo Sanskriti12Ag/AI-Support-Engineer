@@ -16,7 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Create the SQLite data directory and give the application user ownership.
 RUN mkdir -p /app/data \
+    && chown -R appuser:appuser /app/data \
     && chown -R appuser:appuser /app
 
 USER appuser
