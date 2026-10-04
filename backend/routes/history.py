@@ -13,29 +13,70 @@ router = APIRouter(
 )
 
 
+def analysis_to_response(analysis: Analysis) -> dict:
+    """
+    Convert a database Analysis object into the format
+    expected by the frontend.
+    """
+
+    def parse_json(value, default=None):
+        if not value:
+            return default if default is not None else []
+
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return default if default is not None else []
+
+    return {
+        "id": analysis.id,
+        "error_type": analysis.error_type,
+        "category": analysis.category,
+        "severity": analysis.severity,
+        "confidence": float(analysis.confidence),
+        "root_cause": analysis.root_cause,
+        "explanation": analysis.explanation,
+        "suggested_fix": analysis.suggested_fix,
+        "recommended_actions": parse_json(
+            analysis.recommended_actions
+        ),
+        "evidence": parse_json(
+            analysis.evidence
+        ),
+        "original_input": analysis.original_input,
+        "created_at": (
+            analysis.created_at.isoformat()
+            if analysis.created_at
+            else None
+        ),
+    }
+
+
 @router.get("/")
 def get_history(
     db: Session = Depends(get_db)
 ):
-
     analyses = (
         db.query(Analysis)
         .order_by(Analysis.created_at.desc())
-        .limit(50)
         .all()
     )
 
     return [
         {
-            "id": item.id,
-            "error_type": item.error_type,
-            "category": item.category,
-            "severity": item.severity,
-            "confidence": float(item.confidence),
-            "root_cause": item.root_cause,
-            "created_at": item.created_at
+            "id": analysis.id,
+            "error_type": analysis.error_type,
+            "category": analysis.category,
+            "severity": analysis.severity,
+            "confidence": float(analysis.confidence),
+            "root_cause": analysis.root_cause,
+            "created_at": (
+                analysis.created_at.isoformat()
+                if analysis.created_at
+                else None
+            ),
         }
-        for item in analyses
+        for analysis in analyses
     ]
 
 
@@ -44,34 +85,16 @@ def get_analysis(
     analysis_id: int,
     db: Session = Depends(get_db)
 ):
-
-    item = (
+    analysis = (
         db.query(Analysis)
         .filter(Analysis.id == analysis_id)
         .first()
     )
 
-    if not item:
+    if not analysis:
         raise HTTPException(
             status_code=404,
-            detail="Analysis not found"
+            detail="Analysis not found."
         )
 
-    return {
-        "id": item.id,
-        "error_type": item.error_type,
-        "category": item.category,
-        "severity": item.severity,
-        "confidence": float(item.confidence),
-        "root_cause": item.root_cause,
-        "explanation": item.explanation,
-        "suggested_fix": item.suggested_fix,
-        "recommended_actions": json.loads(
-            item.recommended_actions
-        ),
-        "evidence": json.loads(
-            item.evidence
-        ),
-        "original_input": item.original_input,
-        "created_at": item.created_at
-    }
+    return analysis_to_response(analysis)

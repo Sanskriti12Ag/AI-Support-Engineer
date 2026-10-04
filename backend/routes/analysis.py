@@ -22,26 +22,14 @@ from services.database import get_db
 from services.analyzer import analyze_error
 
 
-# -----------------------------
-# Router Configuration
-# -----------------------------
-
 router = APIRouter(
     prefix="/api/analysis",
     tags=["Analysis"]
 )
 
 
-# -----------------------------
-# Constants
-# -----------------------------
+MAX_LOG_SIZE = 2 * 1024 * 1024
 
-MAX_LOG_SIZE = 2 * 1024 * 1024  # 2 MB
-
-
-# -----------------------------
-# Save Analysis to Database
-# -----------------------------
 
 def save_analysis(
     result: dict,
@@ -67,9 +55,7 @@ def save_analysis(
         )
 
         db.add(analysis)
-
         db.commit()
-
         db.refresh(analysis)
 
         return analysis
@@ -88,10 +74,6 @@ def save_analysis(
         )
 
 
-# -----------------------------
-# Analyze Pasted Error
-# -----------------------------
-
 @router.post(
     "/",
     response_model=AnalysisResponse
@@ -104,18 +86,16 @@ def analyze(
         request.error_text
     )
 
-    save_analysis(
+    saved_analysis = save_analysis(
         result,
         request.error_text,
         db
     )
 
+    result["id"] = saved_analysis.id
+
     return result
 
-
-# -----------------------------
-# Analyze Uploaded Log File
-# -----------------------------
 
 @router.post(
     "/upload",
@@ -125,20 +105,11 @@ async def analyze_log_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-
-    # -----------------------------
-    # Validate filename
-    # -----------------------------
-
     if not file.filename:
         raise HTTPException(
             status_code=400,
             detail="No file provided."
         )
-
-    # -----------------------------
-    # Validate file extension
-    # -----------------------------
 
     if not file.filename.lower().endswith(".log"):
         raise HTTPException(
@@ -146,25 +117,13 @@ async def analyze_log_file(
             detail="Only .log files are supported."
         )
 
-    # -----------------------------
-    # Read uploaded file
-    # -----------------------------
-
     content = await file.read()
-
-    # -----------------------------
-    # Validate file size
-    # -----------------------------
 
     if len(content) > MAX_LOG_SIZE:
         raise HTTPException(
             status_code=413,
             detail="Log file is too large. Maximum size is 2 MB."
         )
-
-    # -----------------------------
-    # Decode UTF-8
-    # -----------------------------
 
     try:
         log_text = content.decode("utf-8")
@@ -175,32 +134,20 @@ async def analyze_log_file(
             detail="Log file must use UTF-8 encoding."
         )
 
-    # -----------------------------
-    # Reject empty files
-    # -----------------------------
-
     if not log_text.strip():
         raise HTTPException(
             status_code=400,
             detail="The log file is empty."
         )
 
-    # -----------------------------
-    # Analyze log
-    # -----------------------------
+    result = analyze_error(log_text)
 
-    result = analyze_error(
-        log_text
-    )
-
-    # -----------------------------
-    # Save analysis
-    # -----------------------------
-
-    save_analysis(
+    saved_analysis = save_analysis(
         result,
         log_text,
         db
     )
+
+    result["id"] = saved_analysis.id
 
     return result

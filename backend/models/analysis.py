@@ -1,47 +1,23 @@
 from typing import List, Literal
-
 from pydantic import BaseModel, Field
 
 
-# -----------------------------
-# Analysis Request
-# -----------------------------
-
 class AnalysisRequest(BaseModel):
-    error_text: str = Field(
-        ...,
-        min_length=1,
-        max_length=50000
-    )
+    error_text: str = Field(..., min_length=1, max_length=50000)
 
-
-# -----------------------------
-# Log Summary
-# -----------------------------
 
 class LogSummary(BaseModel):
-    total_lines: int = Field(
-        ge=0
-    )
-
+    total_lines: int = Field(ge=0)
     errors: List[str]
-
     warnings: List[str]
-
     timestamps: List[str]
-
     status_codes: List[str]
 
 
-# -----------------------------
-# Analysis Response
-# -----------------------------
-
 class AnalysisResponse(BaseModel):
-    error_type: str = Field(
-        min_length=1,
-        max_length=200
-    )
+    id: int | None = None
+
+    error_type: str = Field(min_length=1, max_length=200)
 
     category: Literal[
         "Database",
@@ -87,14 +63,8 @@ class AnalysisResponse(BaseModel):
     log_summary: LogSummary
 
 
-# -----------------------------
-# Chat Request
-# -----------------------------
-
 class ChatRequest(BaseModel):
-    analysis_id: int = Field(
-        gt=0
-    )
+    analysis_id: int = Field(gt=0)
 
     question: str = Field(
         ...,
@@ -102,10 +72,6 @@ class ChatRequest(BaseModel):
         max_length=5000
     )
 
-
-# -----------------------------
-# Chat Response
-# -----------------------------
 
 class ChatResponse(BaseModel):
     answer: str = Field(

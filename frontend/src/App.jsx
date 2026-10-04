@@ -134,74 +134,86 @@ function App() {
     }
   }
 
-  async function askFollowUp(event) {
-    event.preventDefault();
-
-    if (!analysis) {
-      return;
-    }
-
-    if (!chatQuestion.trim()) {
-      return;
-    }
-
-    try {
-      setChatLoading(true);
-      setChatAnswer("");
-
-      const response = await fetch(`${API_URL}/api/chat/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          analysis_id: analysis.id || history[0]?.id,
-          question: chatQuestion,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Unable to get an AI response."
-        );
-      }
-
-      setChatAnswer(data.answer);
-      setChatQuestion("");
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setChatLoading(false);
-    }
+  const askFollowUp = async () => {
+  if (!chatQuestion.trim()) {
+    setMessage("Please enter a question.");
+    return;
   }
 
-  function selectHistory(item) {
-    setAnalysis({
-      error_type: item.error_type,
-      category: item.category,
-      severity: item.severity,
-      confidence: Number(item.confidence),
-      root_cause: item.root_cause,
-      explanation:
-        "This analysis was loaded from saved history.",
-      suggested_fix: "Review the original analysis for the complete recommendation.",
-      recommended_actions: [],
-      evidence: [],
-      log_summary: {
-        total_lines: 0,
-        errors: [],
-        warnings: [],
-        timestamps: [],
-        status_codes: [],
-      },
-      id: item.id,
-    });
+  const analysisId =
+    analysis?.id || history[0]?.id;
 
+  if (!analysisId) {
+    setMessage(
+      "Please run or select an analysis first."
+    );
+    return;
+  }
+
+  try {
+    setChatLoading(true);
     setChatAnswer("");
     setMessage("");
+
+    const response = await fetch(
+      `${API_URL}/api/chat/`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          analysis_id: analysisId,
+          question: chatQuestion.trim()
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail || "Failed to get AI response."
+      );
+    }
+
+    setChatAnswer(data.answer);
+
+  } catch (error) {
+    setMessage(
+      error.message || "Failed to get AI response."
+    );
+
+  } finally {
+    setChatLoading(false);
   }
+};
+
+ const selectHistory = async (item) => {
+  try {
+    setMessage("");
+    setChatAnswer("");
+
+    const response = await fetch(
+      `${API_URL}/api/history/${item.id}`
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load analysis.");
+    }
+
+    const data = await response.json();
+
+    setAnalysis(data);
+
+    setErrorText(data.original_input || "");
+
+  } catch (error) {
+    setMessage(
+      error.message || "Failed to load history item."
+    );
+  }
+};
 
   function clearAnalysis() {
     setAnalysis(null);
